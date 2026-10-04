@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DRL Exploration — Giang Nguyen</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css">
+  <link rel="shortcut icon" href="../assets/site/favicon.png">
+  <meta name="description" content="Autonomous exploration with frontier-based goal selection, RRT* global planning and a SAC deep reinforcement learning local planner on a TurtleBot 2">
+  <script>
+    window.MathJax = { tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']] }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+
+<body>
+<table border="0" align="center" cellspacing="0" cellpadding="0" style="width:100%; max-width:800px">
+<tr><td>
+
+  <div class="crumbs">
+    <a href="../index.html">home</a><span class="sep">/</span><a href="../projects.html">projects</a>
+  </div>
+
+  <div class="proj-head">
+    <div class="kicker">Hands-On Planning · Universitat de Girona</div>
+    <h1 class="proj-title">Exploration with a Deep RL Motion Planner</h1>
+    <p class="proj-sub">🧭 frontier-based exploration, RRT* global planning and a SAC local planner on a real TurtleBot 2</p>
+    <div class="reslinks">
+      <a href="https://github.com/Alex108306/Exploration-with-Deep-Reinforcement-Learning-motion-planner">code</a>
+      <a href="../assets/projects/drl-exploration/planning.pdf">slides</a>
+      <a href="https://www.youtube.com/watch?v=5KxcCdxkTQc">video</a>
+    </div>
+  </div>
+
+  <div class="prose">
+
+    <p>
+      This is my project within the Hands-On Planning course at Universitat de Girona, done
+      together with Elchin Aslanli. We built a ROS 2 global-local planner that lets a robot
+      explore an unknown environment on its own. Some key points:
+    </p>
+
+    <ul>
+      <li>Occupancy-grid mapping from LiDAR, with <strong>frontier-based exploration</strong> to pick the next goal.</li>
+      <li><strong>RRT*</strong> path planning over an inflated map to produce collision-free waypoints.</li>
+      <li>A <strong>Soft Actor-Critic (SAC)</strong> local planner, trained in MuJoCo, that turns waypoints and LiDAR into velocity commands.</li>
+      <li>Deployed end to end on a real TurtleBot 2 in a maze built in the lab.</li>
+    </ul>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/drl-exploration/demo_preview.gif" alt="Real-robot exploration">
+      <figcaption>TurtleBot 2 exploring the lab maze (left) while the occupancy map, frontiers and RRT* path build up in RViz (right)</figcaption>
+    </figure>
+
+    <hr>
+
+    <h3>System Overview</h3>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/drl-exploration/conceptual_design.png" alt="Conceptual design">
+      <figcaption>The global layer chooses where to go; the learned local layer decides how to drive there</figcaption>
+    </figure>
+
+    <ol>
+      <li>LiDAR scans are fused into an <strong>occupancy grid map</strong>.</li>
+      <li><strong>Frontier detection</strong> finds free cells bordering unknown space, and <strong>frontier selection</strong> picks the best safe goal.</li>
+      <li><strong>RRT*</strong> plans a collision-free path to that goal and outputs a list of waypoints.</li>
+      <li>The <strong>SAC local planner</strong> takes the waypoints, LiDAR, odometry and IMU, and outputs the control commands $(v, \omega)$.</li>
+    </ol>
+
+    <p>
+      Each exploration cycle groups the reachable frontier cells into clusters and scores them by
+      <em>information gain − distance + cluster size</em>. The chosen goal is shifted inward toward
+      free space and checked for clearance before it is sent to the planner. Goals that time out or
+      stop making progress are temporarily blacklisted, so the robot does not get stuck chasing an
+      unreachable frontier.
+    </p>
+
+    <hr>
+
+    <h3>DRL Local Planner</h3>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/drl-exploration/sac_network_architecture.png" alt="SAC network architecture">
+      <figcaption>A 1D CNN encodes the stacked LiDAR scans; its features are fused with the robot state for the SAC actor and critic</figcaption>
+    </figure>
+
+    <p>
+      The LiDAR scan and a validity mask are passed through three <code>Conv1d</code> layers
+      (32 → 64 → 128 channels) and max-pooled into a 64-d feature, which is concatenated with the
+      robot-state vector. The policy outputs continuous linear and angular velocities. The reward
+      combines ten terms:
+    </p>
+
+    $$ R_{total} = 5r_1 + 3r_2 + 0.5r_3 + 0.3r_4 + r_5 + 0.2r_6 + 0.02r_7 + 1.5r_8 + r_9 + r_{10} $$
+
+    <p>
+      covering forward motion, progress toward the next waypoint, heading alignment, velocity
+      smoothness, collision and obstacle-proximity penalties, path following, a turn-or-drive term
+      for large heading errors, a waypoint bonus, and a final goal / timeout reward.
+    </p>
+
+    <div class="fig-row">
+      <figure>
+        <img loading="lazy" src="../assets/projects/drl-exploration/mujoco_training_env.png" alt="MuJoCo training environment">
+        <figcaption>MuJoCo training environment with randomized obstacles and RRT*-style waypoint paths</figcaption>
+      </figure>
+      <figure>
+        <img loading="lazy" src="../assets/projects/drl-exploration/training_curves.png" alt="Training curves">
+        <figcaption>Over ~250k steps the goal-reached rate converges to ~1.0 and the collision rate drops close to 0</figcaption>
+      </figure>
+    </div>
+
+    <hr>
+
+    <h3>Real-World Experiment</h3>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/drl-exploration/real_world_setup.jpg" alt="Real-world maze">
+      <figcaption>The maze built at Universitat de Girona for the real-robot test</figcaption>
+    </figure>
+
+    <iframe height="433" src="https://www.youtube.com/embed/5KxcCdxkTQc" title="YouTube video player" frameborder="0" style="border: 0px solid #bbb; border-radius: 10px; width: 100%;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen=""></iframe>
+
+    <p>
+      The full stack runs on the real robot: it selects useful exploration goals and generates safe
+      motion commands in real-world conditions. As future work, we would like a CI/CD-style learning
+      loop in which the robot keeps learning from every real-world run, not only from simulation.
+    </p>
+
+    <p>
+      My part of the work was training the RL model, the RRT* planner, and testing the model in
+      MuJoCo. Elchin worked on frontier-based exploration, pose-controller tests, and integrating
+      the RL model on the real robot.
+    </p>
+
+  </div>
+
+  <div class="backlink">
+    <a href="../projects.html">← back to projects</a>
+  </div>
+
+</td></tr>
+</table>
+
+</body>
+</html>

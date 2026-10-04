@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task-Priority Control — Giang Nguyen</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css">
+  <link rel="shortcut icon" href="../assets/site/favicon.png">
+  <meta name="description" content="Task-priority whole-body control and behavior-tree pick and place for a TurtleBot 2 mobile manipulator">
+  <script>
+    window.MathJax = { tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']] }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+
+<body>
+<table border="0" align="center" cellspacing="0" cellpadding="0" style="width:100%; max-width:800px">
+<tr><td>
+
+  <div class="crumbs">
+    <a href="../index.html">home</a><span class="sep">/</span><a href="../projects.html">projects</a>
+  </div>
+
+  <div class="proj-head">
+    <div class="kicker">Hands-On Intervention · Universitat de Girona</div>
+    <h1 class="proj-title">Task-Priority Control for a Mobile Manipulator</h1>
+    <p class="proj-sub">🦾 whole-body control and behavior trees for autonomous ArUco-guided pick and place</p>
+    <div class="reslinks">
+      <a href="https://github.com/Alex108306/Task-Priority-Control-for-a-Mobile-Manipulator">code</a>
+      <a href="../assets/projects/task-priority/intervention.pdf">slides</a>
+    </div>
+  </div>
+
+  <div class="prose">
+
+    <p>
+      This is my project within the Hands-On Intervention course at Universitat de Girona, done
+      together with Elchin Aslanli. We built a ROS 2 framework for whole-body control of a mobile
+      manipulator: a <strong>Kobuki (TurtleBot 2) base</strong> carrying a <strong>uFactory SwiftPro
+      arm</strong> with a vacuum gripper. Some key points:
+    </p>
+
+    <ul>
+      <li>A recursive <strong>task-priority</strong> controller drives the base and the arm as one 6-DOF system.</li>
+      <li>Weighted damped least squares with <strong>adaptive weighting</strong>: the base handles large displacements, and the arm takes over when the target is within reach.</li>
+      <li>A <strong>behavior tree</strong> (<code>py_trees</code>) sequences the mission, with an ArUco detector giving the object pose.</li>
+      <li>Validated in the Stonefish simulator and then deployed on the real robot.</li>
+    </ul>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/task-priority/result_demo.gif" alt="Real-robot pick and place">
+      <figcaption>Real-robot demo: ArUco detection, pick, transport and place (about 1.7× speed)</figcaption>
+    </figure>
+
+    <hr>
+
+    <h3>System Architecture and Kinematics</h3>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/task-priority/system_architecture.png" alt="System architecture">
+      <figcaption>ArUco detection, behavior-tree planning and the task-priority control loop</figcaption>
+    </figure>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/task-priority/kinematics.png" alt="Kinematics">
+      <figcaption>The end-effector pose is the product of the base pose, the mounting transform and the arm forward kinematics</figcaption>
+    </figure>
+
+    <hr>
+
+    <h3>Task-Priority Control</h3>
+
+    <p>
+      Each task $i$ is solved in the null space of all higher-priority tasks:
+    </p>
+
+    $$ \bar{J}_i = J_i P_{i-1},\qquad \dot{\zeta}_i = \dot{\zeta}_{i-1} + \bar{J}_i^{+}\left(a_i\, \dot{x}_i - J_i\dot{\zeta}_{i-1}\right),\qquad P_i = P_{i-1} - \bar{J}_i^{\dagger}\bar{J}_i $$
+
+    <p>
+      Each pseudo-inverse is a weighted damped least-squares solution
+      $\bar{J}^{+} = W^{-1}\bar{J}^{T}(\bar{J}W^{-1}\bar{J}^{T} + \lambda^{2}I)^{-1}$, and the
+      weighting matrix $W$ switches at run time depending on how far the target is from the base.
+      Joint limits are handled as inequality tasks at the top of the hierarchy, and if any DOF
+      exceeds its velocity limit, the whole command is scaled down so the direction of motion is
+      kept.
+    </p>
+
+    <hr>
+
+    <h3>Mission Planning with Behavior Trees</h3>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/task-priority/behavior_tree_task_H.png" alt="Behavior tree">
+      <figcaption>Behavior tree for the final autonomous pick-and-place mission</figcaption>
+    </figure>
+
+    <p>
+      The mission is a memory-based sequence: home pose → detect ArUco → go to the object → pick →
+      safe pose → go to the place position → place → home pose. Each phase is a
+      <code>Selector(condition, action)</code>, so a phase whose condition is already satisfied is
+      skipped. This makes the tree reactive and safe to re-tick.
+    </p>
+
+    <hr>
+
+    <h3>Results</h3>
+
+    <div class="fig-row">
+      <figure>
+        <img loading="lazy" src="../assets/projects/task-priority/sim_xy_path.png" alt="Simulation path">
+        <figcaption>Simulation: base and end-effector path</figcaption>
+      </figure>
+      <figure>
+        <img loading="lazy" src="../assets/projects/task-priority/real_xy_path.png" alt="Real robot path">
+        <figcaption>Real robot: the path closely matches the simulated one</figcaption>
+      </figure>
+    </div>
+
+    <div class="fig-row">
+      <figure>
+        <img loading="lazy" src="../assets/projects/task-priority/sim_ee_error.png" alt="Simulation EE error">
+        <figcaption>Simulation: end-effector error converges after each new goal</figcaption>
+      </figure>
+      <figure>
+        <img loading="lazy" src="../assets/projects/task-priority/real_ee_error.png" alt="Real robot EE error">
+        <figcaption>Real robot: every sub-goal is reached within tolerance</figcaption>
+      </figure>
+    </div>
+
+    <div class="fig-row">
+      <figure>
+        <img loading="lazy" src="../assets/projects/task-priority/real_dof_velocities.png" alt="DOF velocities">
+        <figcaption>All DOF velocities stay within ±0.2 thanks to velocity scaling</figcaption>
+      </figure>
+      <figure>
+        <img loading="lazy" src="../assets/projects/task-priority/real_joint_positions.png" alt="Joint positions">
+        <figcaption>Joint limits are respected throughout the mission</figcaption>
+      </figure>
+    </div>
+
+    <p>
+      The full pick-and-place mission was completed both in simulation (about 115 s) and on the
+      real robot (about 105 s). Next steps are recovery behaviors when the marker is lost or the
+      grasp fails, hysteresis on the joint-limit activation to remove chattering, and a proper
+      localization source to reduce odometry drift.
+    </p>
+
+  </div>
+
+  <div class="backlink">
+    <a href="../projects.html">← back to projects</a>
+  </div>
+
+</td></tr>
+</table>
+
+</body>
+</html>

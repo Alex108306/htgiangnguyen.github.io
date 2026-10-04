@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Line-Feature Graph SLAM — Giang Nguyen</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css">
+  <link rel="shortcut icon" href="../assets/site/favicon.png">
+  <meta name="description" content="Line-feature Graph SLAM with Split-and-Merge segmentation and GTSAM iSAM2 on a TurtleBot">
+  <script>
+    window.MathJax = { tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']] }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+
+<body>
+<table border="0" align="center" cellspacing="0" cellpadding="0" style="width:100%; max-width:800px">
+<tr><td>
+
+  <div class="crumbs">
+    <a href="../index.html">home</a><span class="sep">/</span><a href="../projects.html">projects</a>
+  </div>
+
+  <div class="proj-head">
+    <div class="kicker">Hands-On Localization · Universitat de Girona</div>
+    <h1 class="proj-title">Line-Feature Graph SLAM</h1>
+    <p class="proj-sub">🗺️ Split-and-Merge line extraction and GTSAM iSAM2 factor-graph SLAM on a TurtleBot</p>
+    <div class="reslinks">
+      <a href="https://github.com/Alex108306/Graph_SLAM_Project">code</a>
+    </div>
+  </div>
+
+  <div class="prose">
+
+    <p>
+      This is my project within the Hands-On Localization course at Universitat de Girona, done
+      together with Elchin Aslanli. The robot extracts <strong>line features</strong> (walls) from
+      its 2D LiDAR scans and fuses them with wheel odometry and an IMU compass in a
+      <strong>factor graph</strong> optimized incrementally with <strong>GTSAM iSAM2</strong>. It
+      estimates the robot pose and builds a map of line landmarks, each with its uncertainty, in
+      real time on both the Stonefish simulator and the real robot.
+    </p>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/graph-slam/result_real_robot.gif" alt="Real robot run">
+      <figcaption>Real robot run (4× speed). Right: mapped line landmarks (cyan), their 95% uncertainty bounds (yellow), and current scan-to-map associations (white)</figcaption>
+    </figure>
+
+    <hr>
+
+    <h3>System Overview</h3>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/graph-slam/slide-03.png" alt="Conceptual design">
+      <figcaption>LiDAR, wheel encoders and IMU in; robot pose and a line-feature map out</figcaption>
+    </figure>
+
+    <p>
+      Each time a joint-state message arrives, the node syncs the latest IMU and LiDAR data,
+      predicts the pose with the differential-drive model, associates the observed lines with map
+      landmarks, and, once the robot has moved enough, adds a key-frame to the graph and runs an
+      iSAM2 update.
+    </p>
+
+    <hr>
+
+    <h3>Line Extraction: Split-and-Merge</h3>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/graph-slam/slide-04.png" alt="Split-and-Merge">
+      <figcaption>Recursive split at the farthest point, then iterative merge of nearly collinear segments</figcaption>
+    </figure>
+
+    <p>
+      Each segment is converted to Hessian normal form $(\rho, \alpha)$. The endpoint noise is
+      propagated to the line with the Jacobian $J = \partial(\rho, \alpha) / \partial(x_0, y_0, x_1, y_1)$,
+      giving the line covariance $C_{line} = J\, C_{points}\, J^T$.
+    </p>
+
+    <hr>
+
+    <h3>Graph SLAM Back-End</h3>
+
+    <div class="fig-row">
+      <figure>
+        <img loading="lazy" src="../assets/projects/graph-slam/slide-06.png" alt="Factor graph">
+        <figcaption>Factor graph with prior, odometry, compass and line-observation factors</figcaption>
+      </figure>
+      <figure>
+        <img loading="lazy" src="../assets/projects/graph-slam/slide-07.png" alt="Custom line factor">
+        <figcaption>Custom GTSAM factor with analytic Jacobians for line observations</figcaption>
+      </figure>
+    </div>
+
+    <p>
+      The sensor model predicts how a world-frame line $(\rho_f, \alpha_f)$ appears from the robot
+      pose $(x, y, \theta)$:
+    </p>
+
+    $$ {}^B\hat\rho = \rho_f - \cos(\alpha_f)\,x - \sin(\alpha_f)\,y,\qquad {}^B\hat\alpha = \alpha_f - \theta $$
+
+    <p>
+      The first optimization is a batch Levenberg–Marquardt solve used to initialize iSAM2; after
+      that, new factors are pushed incrementally. The marginal covariances of the current pose and
+      all landmarks are recovered after each update, for data association and for drawing the
+      uncertainty bounds.
+    </p>
+
+    <hr>
+
+    <h3>Data Association and Feature Persistency</h3>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/graph-slam/slide-08.png" alt="Feature persistency">
+      <figcaption>New lines wait in a candidate pool until they have been seen consistently</figcaption>
+    </figure>
+
+    <p>
+      Observations are matched to landmarks with <strong>ICNN</strong> and χ² gating on the
+      Mahalanobis distance, plus a tight geometric gate to catch duplicates. Unassociated lines do
+      not enter the map right away: they are promoted to landmarks only after being seen several
+      times. This filters out spurious lines (people, clutter, bad segmentation) and noticeably
+      reduces duplicate landmarks.
+    </p>
+
+    <hr>
+
+    <h3>Results</h3>
+
+    <div class="fig-row">
+      <figure>
+        <img loading="lazy" src="../assets/projects/graph-slam/trajectory_sim.png" alt="Simulation trajectory">
+        <figcaption>Simulation: the Graph SLAM estimate (dark red) follows the ground truth (black) closely</figcaption>
+      </figure>
+      <figure>
+        <img loading="lazy" src="../assets/projects/graph-slam/trajectory_real.png" alt="Real robot trajectory">
+        <figcaption>Real robot: combining lines and IMU gives the most consistent trajectory</figcaption>
+      </figure>
+    </div>
+
+    <p>
+      On the real robot, dead-reckoning odometry drifts badly, IMU-only fixes the heading but still
+      drifts in position, and line-only gets jagged when few walls are visible. Combining both gives
+      the best result. As future work, a sliding-window optimization would keep the graph small
+      for long missions.
+    </p>
+
+    <p>
+      My part of the work was the Split-and-Merge algorithm and the Graph SLAM implementation in
+      simulation. Elchin worked on the RViz visualization and the real-robot Graph SLAM
+      implementation.
+    </p>
+
+  </div>
+
+  <div class="backlink">
+    <a href="../projects.html">← back to projects</a>
+  </div>
+
+</td></tr>
+</table>
+
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FEKF SLAM — Giang Nguyen</title>
+  <link rel="stylesheet" type="text/css" href="../stylesheet.css">
+  <link rel="shortcut icon" href="../assets/site/favicon.png">
+  <meta name="description" content="Feature-based Extended Kalman Filter localization and SLAM for a simulated differential-drive robot">
+  <script>
+    window.MathJax = { tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']] }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+
+<body>
+<table border="0" align="center" cellspacing="0" cellpadding="0" style="width:100%; max-width:800px">
+<tr><td>
+
+  <div class="crumbs">
+    <a href="../index.html">home</a><span class="sep">/</span><a href="../projects.html">projects</a>
+  </div>
+
+  <div class="proj-head">
+    <div class="kicker">Probabilistic Robotics · Universitat de Girona</div>
+    <h1 class="proj-title">Feature EKF Localization and SLAM</h1>
+    <p class="proj-sub">📍 EKF localization, map-based localization and SLAM for a differential-drive robot</p>
+    <div class="reslinks">
+      <a href="https://github.com/Alex108306/FEKFSLAM">code</a>
+    </div>
+  </div>
+
+  <div class="prose">
+
+    <p>
+      A Python implementation of <strong>Feature-based Extended Kalman Filter (FEKF)</strong>
+      localization and SLAM for a simulated 3-DOF differential-drive robot, built on the PRPY
+      probabilistic robot localization library. The project has three steps, each building on the
+      previous one:
+    </p>
+
+    <ol>
+      <li><strong>EKF localization with dead reckoning + compass.</strong> Wheel-encoder odometry drives the motion model, and compass (yaw) readings update the filter.</li>
+      <li><strong>Feature EKF map-based localization.</strong> The robot knows a map of 2D point features, matches its observations to the map with ICNN data association, and uses them to correct its pose.</li>
+      <li><strong>Feature EKF SLAM.</strong> The map starts empty. Unmatched observations are added to the state vector as new features, so the robot builds the map and localizes itself at the same time.</li>
+    </ol>
+
+    <figure>
+      <img loading="lazy" src="../assets/projects/fekf-slam/mbl_live.gif" alt="Live FEKF map-based localization" style="max-width:420px">
+      <figcaption>Live map-based localization run. Blue: estimated trajectory and feature observations; black: expected observations of the map features</figcaption>
+    </figure>
+
+    <hr>
+
+    <h3>Algorithm</h3>
+
+    <p>On each step, the filter runs:</p>
+
+    <ol>
+      <li><strong>Prediction</strong> with the compounding operator $\oplus$: $\bar x_k = x_{k-1} \oplus (u_k + w_k)$ and $\bar P_k = A_k P_{k-1} A_k^T + W_k Q_k W_k^T$.</li>
+      <li><strong>Data association (ICNN).</strong> Each observation is paired with the nearest map feature by squared Mahalanobis distance
+        $$ D^2_{ij} = (z_i - h_j)^T (P_{h_j} + R_i)^{-1} (z_i - h_j), $$
+        and the pairing is accepted only if it passes the individual-compatibility test $D^2_{ij} < \chi^2_{d,\alpha}$.</li>
+      <li><strong>Update.</strong> Paired features are stacked with the compass reading and a standard EKF update is applied (the Joseph form is also implemented).</li>
+      <li><strong>State augmentation (SLAM only).</strong> Each unpaired observation becomes a new feature $x_{F_{new}} = x_B \boxplus z_{F_i}$, and the covariance grows through the Jacobians of $\boxplus$, keeping the robot-feature cross-correlations.</li>
+    </ol>
+
+    <p>
+      The concrete filters are put together with multiple inheritance (observation model +
+      localization method + motion model), so Cartesian or polar features and displacement or
+      constant-velocity motion models can be swapped freely.
+    </p>
+
+    <hr>
+
+    <h3>EKF with Compass Updates</h3>
+
+    <div class="fig-row">
+      <figure>
+        <img loading="lazy" src="../assets/projects/fekf-slam/ekf_xy_nocompass.png" alt="No compass">
+        <figcaption>No compass: pure dead reckoning, the estimate drifts away</figcaption>
+      </figure>
+      <figure>
+        <img loading="lazy" src="../assets/projects/fekf-slam/ekf_xy_10hz.png" alt="10 Hz compass">
+        <figcaption>10 Hz compass: heading is locked and the trajectory almost matches the ground truth</figcaption>
+      </figure>
+    </div>
+
+    <p>
+      Even with a fast compass, the x/y covariance keeps growing, because the compass does not
+      observe position. That is what the feature updates fix.
+    </p>
+
+    <hr>
+
+    <h3>Map-Based Localization</h3>
+
+    <div class="fig-row">
+      <figure>
+        <img loading="lazy" src="../assets/projects/fekf-slam/mbl_xy.png" alt="MBL trajectory">
+        <figcaption>XY trajectory: ground truth vs. estimate</figcaption>
+      </figure>
+      <figure>
+        <img loading="lazy" src="../assets/projects/fekf-slam/mbl_states.png" alt="MBL states">
+        <figcaption>State errors stay within ±0.3 m and inside the ±3σ bounds</figcaption>
+      </figure>
+    </div>
+
+    <p>
+      With feature updates, the full pose becomes observable. The uncertainty stays bounded and
+      shrinks each time features are observed, instead of growing without limit as in dead
+      reckoning.
+    </p>
+
+    <hr>
+
+    <h3>Feature EKF SLAM</h3>
+
+    <div class="fig-row">
+      <figure>
+        <img loading="lazy" src="../assets/projects/fekf-slam/slam_map_none.png" alt="SLAM without observations">
+        <figcaption>No feature observations: the estimate drifts and the uncertainty grows to tens of metres</figcaption>
+      </figure>
+      <figure>
+        <img loading="lazy" src="../assets/projects/fekf-slam/slam_map_20.png" alt="SLAM with observations">
+        <figcaption>Observations every 20 steps: mapped features (red) converge on the true landmarks</figcaption>
+      </figure>
+    </div>
+
+    <div class="fig-row">
+      <figure>
+        <img loading="lazy" src="../assets/projects/fekf-slam/slam_xy_20.png" alt="SLAM trajectory">
+        <figcaption>The estimated trajectory overlaps the ground truth</figcaption>
+      </figure>
+      <figure>
+        <img loading="lazy" src="../assets/projects/fekf-slam/slam_states_20.png" alt="SLAM states">
+        <figcaption>Errors remain inside the ±3σ bounds, so the filter stays consistent</figcaption>
+      </figure>
+    </div>
+
+    <p>
+      Features within the 50 m sensor range are initialized and then re-observed on every lap. The
+      robot-feature correlations let each re-observation correct the robot pose and the map
+      together. Observing more often gives tighter bounds on both the robot and the features.
+    </p>
+
+  </div>
+
+  <div class="backlink">
+    <a href="../projects.html">← back to projects</a>
+  </div>
+
+</td></tr>
+</table>
+
+</body>
+</html>
